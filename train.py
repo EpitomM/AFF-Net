@@ -1,25 +1,22 @@
 import model
 import reader
-import numpy as np
-import cv2
 import torch
 import torch.nn as nn
-import torch.optim as optim
 import sys
 import os
-import copy
 import yaml
-import math
 import time
 
 if __name__ == "__main__":
     #os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
     config = yaml.load(open("config.yaml"))
     config = config["train"]
+    # GazeCapture 数据集路径
     path = config["data"]["path"]
+    # 训练好的模型名字
     model_name = config["save"]["model_name"]
 
-
+    # 训练好的模型保存路径
     save_path = os.path.join(config["save"]["save_path"], "checkpoint")
     if not os.path.exists(save_path):
         os.makedirs(save_path)
@@ -27,6 +24,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
     print("Read data")
+    # 读取训练集数据
     dataset = reader.txtload(path, "train", config["params"]["batch_size"], shuffle=True,
                              num_workers=0)
 

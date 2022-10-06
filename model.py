@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import math
 import torchvision
 
+# 自适应组归一化
 class AGN(nn.Module):
     def __init__(self, input_size, channels):
         super(AGN, self).__init__()
@@ -28,6 +29,7 @@ class AGN(nn.Module):
         x = x * (style[:, 0, :, :, :] + 1.) + style[:, 1, :, :, :]
         return x
 
+# 挤压层和激发层
 class SELayer(nn.Module):
     def __init__(self, channel_num, compress_rate):
         super(SELayer, self).__init__()
@@ -48,32 +50,33 @@ class SELayer(nn.Module):
         return output_tensor
 
 
+# 处理眼睛图像的网络
 class EyeImageModel(nn.Module):
     def __init__(self):
         super(EyeImageModel, self).__init__()
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=1)
         self.features1_1 = nn.Sequential(
-            nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0),
+            nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0),       # (112, 112, 3) -> (54, 54, 24)
             nn.GroupNorm(3, 24),
             nn.ReLU(inplace=True),
-            nn.Conv2d(24, 48, kernel_size=5, stride=1, padding=0),
+            nn.Conv2d(24, 48, kernel_size=5, stride=1, padding=0),      # (54, 54, 24) -> (50, 50, 48)
             )
         self.features1_2 = nn.Sequential(
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.MaxPool2d(kernel_size=3, stride=2),                      # (50, 50, 48) -> (24, 24, 48)
             SELayer(48, 16),
-            nn.Conv2d(48, 64, kernel_size=5, stride=1, padding=1),
+            nn.Conv2d(48, 64, kernel_size=5, stride=1, padding=1),      # (24, 24, 48) -> (22, 22, 64)
             )
         self.features1_3 = nn.Sequential(
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.MaxPool2d(kernel_size=3, stride=2),                      # (22, 22, 64) -> (10, 10, 64)
         )
-        self.features2_1 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)
+        self.features2_1 = nn.Conv2d(64, 128, kernel_size=3, stride=1, padding=1)   # (10, 10, 64) -> (10, 10, 128)
             
         self.features2_2 = nn.Sequential(
             nn.ReLU(inplace=True),
             SELayer(128, 16),
-            nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(128, 64, kernel_size=3, stride=1, padding=1),                 # (10, 10, 128) -> (10, 10, 64)
             )
         self.features2_3 = nn.ReLU(inplace=True)
         
@@ -85,35 +88,39 @@ class EyeImageModel(nn.Module):
     def forward(self, x, factor):
         x1 = self.features1_3(self.AGN1_2(self.features1_2(self.AGN1_1(self.features1_1(x), 6, factor)), 8, factor))
         x2 = self.features2_3(self.AGN2_2(self.features2_2(self.AGN2_1(self.features2_1(x1), 16, factor)), 8, factor))
-        
+
+        # 将第三层和第五层的特征映射进行融合
         return torch.cat((x1, x2), 1)
 
 
+# 处理人脸图像的网络
 class FaceImageModel(nn.Module):
 
     def __init__(self):
         super(FaceImageModel, self).__init__()
         self.conv = nn.Sequential(
-            nn.Conv2d(3, 48, kernel_size=5, stride=2, padding=0),
+            # Conv2d：output = ((input_size - kernel_size + 2 * padding) / stride ) + 1 向下取整
+            # MaxPool2d：(input_size - kernel_size) / stride + 1
+            nn.Conv2d(3, 48, kernel_size=5, stride=2, padding=0),   # (224, 224, 3) -> (110, 110, 48)
             nn.GroupNorm(6, 48),
             nn.ReLU(inplace=True),
-            nn.Conv2d(48, 96, kernel_size=5, stride=1, padding=0),
+            nn.Conv2d(48, 96, kernel_size=5, stride=1, padding=0),  # (110, 110, 48) -> (106, 106, 96)
             nn.GroupNorm(12, 96),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            nn.Conv2d(96, 128, kernel_size=5, stride=1, padding=2),
+            nn.MaxPool2d(kernel_size=3, stride=2),                  # (106, 106, 96) -> (52, 52, 96)
+            nn.Conv2d(96, 128, kernel_size=5, stride=1, padding=2), # (52, 52, 96) -> (52, 52, 128)
             nn.GroupNorm(16, 128),
             nn.ReLU(inplace=True),
-            nn.MaxPool2d(kernel_size=3, stride=2),
-            nn.Conv2d(128, 192, kernel_size=3, stride=1, padding=1),
+            nn.MaxPool2d(kernel_size=3, stride=2),                  # (52, 52, 128) -> (25, 25, 128)
+            nn.Conv2d(128, 192, kernel_size=3, stride=1, padding=1),# (25, 25, 128) -> (25, 25, 192)
             nn.GroupNorm(16, 192),
             nn.ReLU(inplace=True),
             SELayer(192, 16),
-            nn.Conv2d(192, 128, kernel_size=3, stride=2, padding=0),
+            nn.Conv2d(192, 128, kernel_size=3, stride=2, padding=0),# (25, 25, 192) -> (12, 12, 128)
             nn.GroupNorm(16, 128),
             nn.ReLU(inplace=True),
             SELayer(128, 16),
-            nn.Conv2d(128, 64, kernel_size=3, stride=2, padding=0),
+            nn.Conv2d(128, 64, kernel_size=3, stride=2, padding=0), # (12, 12, 128) -> (5, 5, 64)
             nn.GroupNorm(8, 64),
             nn.ReLU(inplace=True),
             SELayer(64, 16),
@@ -159,7 +166,8 @@ class model(nn.Module):
             nn.LeakyReLU(inplace=True),
             nn.Linear(128, 2),
         )
-        
+
+        # Rects（人脸和眼睛边界框）特征由 4 个 FC 层直接提取
         self.rects_fc = nn.Sequential(
             nn.Linear(12, 64),
             nn.LeakyReLU(inplace=True),
@@ -197,9 +205,11 @@ class model(nn.Module):
 
 if __name__ == '__main__':
     m = model()
-    feature = {"left": torch.zeros(10,1, 36,60),
-                "right": torch.zeros(10,1, 36,60)
+    feature = {"left": torch.zeros(10, 1, 36, 60),
+                "right": torch.zeros(10, 1, 36, 60)
                 }
+    # 根据 python 人脸识别库的人脸检测结果直接裁剪人脸和眼睛图像。
+    # 人脸图像的大小调整为 224*224*3,眼睛图像的大小为 112*112*3。像素值标准化为 [0，1]。
     feature = {"faceImg": torch.zeros(10, 3, 224, 224), "leftEyeImg": torch.zeros(10, 3, 112, 112),
                "rightEyeImg": torch.zeros(10, 3, 112, 112), "faceGridImg": torch.zeros(10, 12),
                "label": torch.zeros(10, 2), "frame": "test.jpg"}

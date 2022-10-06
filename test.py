@@ -1,14 +1,9 @@
 import model
 import reader
-import numpy as np
-import cv2 
 import torch
 import torch.nn as nn
-import torch.optim as optim
-import sys
 import yaml
 import os
-import copy
 import math
 
 def dis(p1, p2):
